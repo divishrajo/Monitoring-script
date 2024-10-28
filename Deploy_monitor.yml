@@ -1,0 +1,59 @@
+#ansible-playbook for Deploying and monitoring target nodes or servers.
+#This playbook gives the mail alerts of CPU,DISK and MEMORY USAGE of target nodes if they are exceeding the threshold.
+
+- name: "Deployment and Monitoring"
+  hosts: all
+  tasks:
+  
+     - name: "Gathering system facts"
+       setup:
+
+     - name: "copying the monitoring scripts to target nodes"
+       copy:
+          src: "/root/monitoring.sh"
+          dest: /root/
+          mode: '0755'
+       register: copy_result
+     
+     - name: "Fail if script copy fails"
+       fail:
+          msg: "Failed to copy the monitoring Task"
+       when: copy_result.failed 
+
+     - name: "Rollback if file does not runs"
+       file:
+          path: /root/monitoring.sh
+          state: absent
+       when: copy_result.failed
+      
+     - name: "check whether script exists or not in target nodes"
+       stat:
+          path: /root/monitoring.sh
+       register: script_status
+
+     - name: "Running script to check for errors"
+       shell: "/root/monitoring.sh"
+       register: script_output
+       failed_when: "script_output.rc !=0"
+       ignore_errors: yes
+ 
+     - name: "Printing message on Screen if scripts runs successfully"
+       debug:
+          msg: "script output :  {{ script_output.stdout }}"
+       when: script_output.rc ==0
+       
+     - name: "Include additional variables"
+       include_vars:
+          file: vault.yml
+
+     - name: "Send mail alerts if script fails to execute"
+       community.general.mail:
+           host: smtp.gmail.com
+           port: 587
+           username: "{{ email_username }}"
+           password: "{{ email_password }}"
+           to: "xyz@gmail.com"
+           subject: "Monitor script execution failed"
+           body: "Monitoring script failed to execute on the system with IP: {{ ansible_default_ipv4.address }} due to the following errors: {{ script_output }}"
+           secure: starttls
+       when: script_output.rc != 0
